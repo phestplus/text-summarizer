@@ -1,0 +1,46 @@
+{
+  "name": "telegram-pdf-bot",
+  "version": "1.0.0",
+  "description": "",
+  "main": "app.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.ts",
+    "redis": "redis-server",
+    "dev": "concurrently \"npm run redis\" \"npx nodemon\""
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "bullmq": "^5.66.0",
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "ioredis": "^5.8.2",
+    "multer": "^2.0.2",
+    "node-fetch": "^3.3.2",
+    "node-telegram-bot-api": "^0.67.0",
+    "openai": "^6.10.0",
+    "p-limit": "^7.2.0",
+    "pdf-parse": "^2.4.5",
+    "redis": "^5.10.0",
+    "tsconfig-paths": "^4.2.0",
+    "uuid": "^13.0.0",
+    "zod": "^4.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.0.2",
+    "@types/node-fetch": "^2.6.13",
+    "@types/node-telegram-bot-api": "^0.64.13",
+    "@typescript-eslint/eslint-plugin": "^8.49.0",
+    "@typescript-eslint/parser": "^8.49.0",
+    "eslint": "^9.39.2",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.4",
+    "nodemon": "^3.1.11",
+    "prettier": "^3.7.4",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  }
+}

@@ -1,0 +1,25 @@
+version: '3.9'
+
+services:
+  bot:
+    build: .
+    container_name: telegram_summarizer_bot
+    env_file: .env
+    depends_on:
+      - redis
+    volumes:
+      - ./downloads:/app/downloads
+      - ./storage.json:/app/storage.json
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: telegram_summarizer_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+volumes:
+  redis_data:
