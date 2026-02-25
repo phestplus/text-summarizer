@@ -1,42 +1,70 @@
-import { Queue, Worker, Job, connection } from "./redis";
 import { sendMessage } from "@bot/handlers";
-import { summarizeText, summarizeTextFile } from "@services/summarizer";
-import { storage } from "@bot/storage";
+import adminServices from "admin/services";
+import { runAiAnalysis } from "integration/ai";
+import { runImageOCR } from "integration/ocr";
+import userServices from "user/services";
+import { Job, Queue, Worker, connection } from "./redis";
 
 // Create the queue
-const summaryQueue = new Queue("summary", { connection });
+const tradeQueue = new Queue("analyze", { connection });
 
 // Create a worker to process jobs
 new Worker(
-    "summary",
+    "analyze",
     async (job: Job) => {
         console.log("job", job);
         try {
             switch (job.name) {
-                case "text-summary":
-                    const summary = await summarizeText(job.data.text);
-                    console.log(summary);
+                case "analyze-photo":
+                    const ocrResult = await runImageOCR(job.data.filePath);
+                    const analysis=await runAiAnalysis(ocrResult)
+
+                    console.log(analysis);
                     await sendMessage(
                         job.data.chatId,
-                        `📝 Summary:\n${summary}`
+                        `📝 Signal:\n${analysis}`
                     );
                     break;
 
-                case "file-summary":
-                    const fileSummary = await summarizeTextFile(
-                        job.data.filePath
+                case "admin-service":
+                    const adminResult = await adminServices.runAdminService(
+                        job.data.sevice
                     );
-                    await sendMessage(
+                    if(adminResult){
+  await sendMessage(
                         job.data.chatId,
-                        `📄 File Summary:\n${fileSummary}`
+                       adminResult
                     );
-                    break;
-
-                case "broadcast":
-                    const { chatIds, text } = job.data;
-                    for (const id of chatIds) {
-                        await sendMessage(id, `📢 Admin Broadcast:\n${text}`);
                     }
+                  
+                    break;
+
+                case "user-service":
+                    const userResult = await userServices.runUserService(
+                        job.data.sevice
+                    );
+                    if(userResult){
+  await sendMessage(
+                        job.data.chatId,
+                       userResult
+                    );
+                    }
+                  
+                    break;
+                case "admin-broadcast":
+                    const { chatIds, service } = job.data;
+                     const adminBroadcastResult = await adminServices.runAdminService(
+                        service
+                    );
+                    if(adminBroadcastResult){
+                         for (const chatId of chatIds) {
+
+                    await sendMessage(
+                        chatId,
+                       adminBroadcastResult
+                    );                    }
+                    }
+                   
                     break;
 
                 default:
@@ -54,4 +82,5 @@ Please try again in a few minutes. Thank you for your patience.`
     { connection }
 );
 
-export { summaryQueue };
+export { tradeQueue };
+
