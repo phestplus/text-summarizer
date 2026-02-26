@@ -1,5 +1,6 @@
 import { OpenRouter } from '@openrouter/sdk';
 import { ENV } from './env';
+
 interface TradeData {
   datetime: string;
   open: string;
@@ -7,49 +8,50 @@ interface TradeData {
   low: string;
   close: string;
 }
+
 const openRouter = new OpenRouter({
   apiKey: ENV.OPEN_ROUTER_API_KEY,
 });
-export const generateSignal = async (data: TradeData[]) => {
+
+export const generateSignal = async (data: TradeData[], symbol: string, timeframe: string) => {
+  if (!data || data.length < 20) {
+    throw new Error('Insufficient candle data');
+  }
+
+  // Ensure oldest → newest
+  const ordered = [...data].reverse();
+
+  // Convert strings → numbers
+  const normalized = ordered.map((c) => ({
+    datetime: c.datetime,
+    open: Number(c.open),
+    high: Number(c.high),
+    low: Number(c.low),
+    close: Number(c.close),
+  }));
+
   const response = await openRouter.chat.send({
     chatGenerationParams: {
       model: 'deepseek/deepseek-v3.2',
-
       messages: [
         {
           role: 'system',
-          content: `You are a professional institutional technical trader.
+          content: `
+You are a probabilistic institutional technical trader.
 
 You analyze ONLY the provided OHLC candle data, symbol, and timeframe.
 
-You do NOT invent data.
-You do NOT fabricate indicators.
-You do NOT assume external information.
-You use ONLY the supplied candles.
+You must determine:
+- Market structure (trend or range)
+- Break of structure (if any)
+- Momentum strength
+- Volatility behavior
 
-Your job is to determine probabilistic directional bias based on:
+If directional probability ≥ 55%, provide a trade idea.
+If < 55%, return NO TRADE.
 
-1. Market structure (higher highs / lower lows)
-2. Break of structure (BOS)
-3. Trend continuation vs reversal
-4. Momentum strength of recent candles
-5. Range vs expansion behavior
-6. Recent support and resistance zones
-7. Volatility behavior
-
-Decision Logic:
-
-- If directional probability ≥ 55%, provide a trade idea.
-- If directional probability < 55%, return NO TRADE.
-- Confidence must reflect structural clarity and momentum strength.
-- Confidence must never be 0 unless data is unusable.
-
-Trade Construction Rules:
-
-- Entry must be based on structural logic (pullback, breakout, rejection, etc.)
-- Take Profit must align with logical structure target (recent high/low or measured move)
-- Stop Loss must represent clear structural invalidation
-- Risk must make sense structurally
+Confidence must reflect structural clarity.
+Confidence must never be 0 unless data is invalid.
 
 OUTPUT FORMAT (NO DEVIATION):
 
@@ -58,16 +60,30 @@ Entry: <clear structural condition>
 Take Profit: <structure-based target>
 Stop Loss: <clear invalidation level>
 Confidence: <0–100>
+Notes:
+- <short reasoning line 1>
+- <short reasoning line 2>
+- <short reasoning line 3>
 
 Rules:
+- Notes must be maximum 3 short lines
 - No greetings
 - No markdown
-- No explanations outside format
-- Maximum 3 short reasoning lines`,
+- No extra text outside format
+          `.trim(),
         },
         {
           role: 'user',
-          content: JSON.stringify(data, null, 2),
+          content: `
+SYMBOL: ${symbol}
+TIMEFRAME: ${timeframe}
+TOTAL CANDLES: ${normalized.length}
+
+CANDLE DATA (oldest to newest):
+${JSON.stringify(normalized, null, 2)}
+
+Perform full structural technical analysis.
+          `.trim(),
         },
       ],
     },
@@ -80,13 +96,14 @@ export function extractSignal(raw: string): string | null {
   if (!raw) return null;
 
   const match = raw.match(
-    /Action:\s*(BUY|SELL|NO TRADE)[\s\S]*?Confidence:\s*([0-9]{1,3})[\s\S]*?(Notes:[\s\S]*)?/i,
+    /Action:\s*(BUY|SELL|NO TRADE)[\s\S]*?Confidence:\s*([0-9]{1,3})[\s\S]*?Notes:[\s\S]*/i,
   );
 
   if (!match) return null;
 
   return match[0].trim();
 }
+
 export function validateSignal(signal: string): boolean {
   if (!signal) return false;
 
@@ -94,14 +111,14 @@ export function validateSignal(signal: string): boolean {
   const hasEntry = /Entry:/i.test(signal);
   const hasTP = /Take Profit:/i.test(signal);
   const hasSL = /Stop Loss:/i.test(signal);
-  const hasConfidence = /Confidence:\s*([0-9]{1,3})/i.test(signal);
+  const confidenceMatch = signal.match(/Confidence:\s*([0-9]{1,3})/i);
+  const hasNotes = /Notes:\s*-\s*/i.test(signal);
 
-  if (!hasAction || !hasEntry || !hasTP || !hasSL || !hasConfidence) {
+  if (!hasAction || !hasEntry || !hasTP || !confidenceMatch || !hasNotes) {
     return false;
   }
 
-  const confidenceMatch = signal.match(/Confidence:\s*([0-9]{1,3})/i);
-  const confidence = Number(confidenceMatch?.[1]);
+  const confidence = Number(confidenceMatch[1]);
 
   if (confidence < 0 || confidence > 100) return false;
 

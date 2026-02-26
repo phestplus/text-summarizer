@@ -6,14 +6,19 @@ export async function getMarketData(symbol: string, interval: string) {
   console.log('symbol,interval', symbol, interval);
   const cacheKey = `twelve_data_${symbol}_${interval}`;
   const cachedData = await connection.get(cacheKey);
+  console.log('cachedData', cachedData);
   if (cachedData) {
     return JSON.parse(cachedData);
   }
   const res = await axios.get(
     `https://api.twelvedata.com/time_series?symbol=${symbol}&interval=${interval}&outputsize=50&apikey=${ENV.TWELVE_DATA_API_KEY}`,
   );
-  connection.setex(cacheKey, timeframeToSeconds(interval), res.data.values);
-  return res;
+  connection.setex(
+    cacheKey,
+    timeframeToSeconds(interval),
+    JSON.stringify(res.data.values, null, 2),
+  );
+  return res.data.values;
 }
 export function timeframeToSeconds(tf: string): number {
   if (!tf) return 3600;

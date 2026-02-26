@@ -43,10 +43,14 @@ new Worker(
                 return;
               }
 
-              const res = await getMarketData(tradeInput.symbol, tradeInput.timeframe);
-              const data = await res.data;
+              const data = await getMarketData(tradeInput.symbol, tradeInput.timeframe);
+              console.log('data', data);
               /* ---------------- AI SIGNAL ---------------- */
-              const rawSignal = await generateSignal(data.values);
+              const rawSignal = await generateSignal(
+                data,
+                tradeInput.symbol,
+                tradeInput.timeframes,
+              );
 
               const cleanSignal = extractSignal(rawSignal);
 
