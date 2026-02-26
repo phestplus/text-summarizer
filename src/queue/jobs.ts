@@ -46,11 +46,7 @@ new Worker(
               const data = await getMarketData(tradeInput.symbol, tradeInput.timeframe);
               console.log('data', data);
               /* ---------------- AI SIGNAL ---------------- */
-              const rawSignal = await generateSignal(
-                data,
-                tradeInput.symbol,
-                tradeInput.timeframes,
-              );
+              const rawSignal = await generateSignal(data, tradeInput.symbol, tradeInput.timeframe);
 
               const cleanSignal = extractSignal(rawSignal);
 
