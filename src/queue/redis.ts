@@ -1,9 +1,18 @@
-import IORedis from "ioredis";
-import { Queue, Worker, Job } from "bullmq"; // no QueueScheduler
-import { ENV } from "@configs/env";
+import { ENV } from '@configs/env';
+import { Job, Queue, Worker } from 'bullmq'; // no QueueScheduler
+import IORedis from 'ioredis';
 
- const connection = new IORedis("redis://127.0.0.1:6379", {
+const connection = new IORedis(ENV.REDIS_URL, {
   maxRetriesPerRequest: null,
 });
+if (connection) {
+  connection.on('connect', () => {
+    console.log('✅ Redis connected');
+  });
 
-export { connection, Queue, Worker, Job };
+  connection.on('error', (err) => {
+    console.error('❌ Redis error:', err);
+  });
+}
+
+export { connection, Job, Queue, Worker };
