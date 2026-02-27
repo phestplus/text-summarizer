@@ -4,6 +4,8 @@ import { z } from 'zod';
 dotenv.config();
 
 const envSchema = z.object({
+  PORT: z.string().nonempty(),
+  ADMIN_CODE: z.string().nonempty(),
   TELEGRAM_TOKEN: z.string().nonempty(),
   ADMIN_CHAT_ID: z
     .string()
