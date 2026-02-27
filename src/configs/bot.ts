@@ -3,7 +3,7 @@ import { ENV } from "@configs/env";
 
 let bot: TelegramBot | null = null;
 
-export function createBot() {
+export function createBot(): TelegramBot {
     if (!bot) {
         bot = new TelegramBot(ENV.TELEGRAM_TOKEN, {
             polling: {
@@ -18,4 +18,11 @@ export function createBot() {
 
 export function getBot(): TelegramBot | null {
     return bot;
+}
+
+export async function stopBot(): Promise<void> {
+    if (bot) {
+        await bot.stopPolling();
+        bot = null; // <- important! frees the instance
+    }
 }
