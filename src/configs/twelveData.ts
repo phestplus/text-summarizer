@@ -1,14 +1,14 @@
-import { connection } from '@queue/redis';
+import { connection } from '@/queue/redis';
 import axios from 'axios';
+import { TradeData } from './ai';
 import { ENV } from './env';
 
-export async function getMarketData(symbol: string, interval: string) {
-  console.log('symbol,interval', symbol, interval);
+export async function getMarketData(symbol: string, interval: string): Promise<TradeData[]> {
   const cacheKey = `twelve_data_${symbol}_${interval}`;
   const cachedData = await connection.get(cacheKey);
-  console.log('cachedData', cachedData);
   if (cachedData) {
-    return JSON.parse(cachedData);
+    const data = JSON.parse(cachedData);
+    return data;
   }
   const res = await axios.get(
     `https://api.twelvedata.com/time_series?symbol=${symbol}&interval=${interval}&outputsize=50&apikey=${ENV.TWELVE_DATA_API_KEY}`,

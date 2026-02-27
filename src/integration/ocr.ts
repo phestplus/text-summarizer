@@ -25,7 +25,6 @@ export async function runImageOCR(imagePath: string): Promise<string> {
   }
 }
 export function extractTradeInput(text: string): TradeInput | null {
-  console.log('text', text);
   if (!text) return null;
 
   const normalized = text
@@ -73,7 +72,6 @@ export function extractTradeInput(text: string): TradeInput | null {
   }
 
   if (Object.keys(input).length === 0) return null;
-  console.log('input', input);
   return input;
 }
 export function normalizeSymbol(symbol: string) {

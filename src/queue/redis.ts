@@ -1,4 +1,4 @@
-import { ENV } from '@configs/env';
+import { ENV } from '@/configs/env';
 import { Job, Queue, Worker } from 'bullmq'; // no QueueScheduler
 import IORedis from 'ioredis';
 

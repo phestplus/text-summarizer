@@ -1,13 +1,12 @@
-import { sendMessage } from '@bot/handlers';
-import { extractSignal, generateSignal, validateSignal } from '@configs/ai';
-import { ENV } from '@configs/env';
-import { getMarketData } from '@configs/twelveData';
-import adminServices from 'admin/services';
+import adminServices from '@/admin/services';
+import { sendMessage } from '@/bot/handlers';
+import { extractSignal, generateSignal, validateSignal } from '@/configs/ai';
+import { getMarketData } from '@/configs/twelveData';
+import { cleanup, extractTradeInput, normalizeSymbol, runImageOCR } from '@/integration/ocr';
+import userServices from '@/user/services';
 import axios from 'axios';
 import fs from 'fs';
-import { cleanup, extractTradeInput, runImageOCR } from 'integration/ocr';
 import path from 'path';
-import userServices from 'user/services';
 import { Job, Queue, Worker, connection } from './redis';
 // Create the queue
 const tradeQueue = new Queue('analyze', { connection });
@@ -17,11 +16,49 @@ new Worker(
   'analyze',
   async (job: Job) => {
     try {
+      const chatId = job.data.chatId;
       switch (job.name) {
+        case 'trade':
+          const message: string = job.data.text;
+          const parts = message.trim().split(/\s+/);
+
+          const symbol = normalizeSymbol(parts[0]);
+          const timeframe = parts[1]?.toLowerCase(); // ✅ normalize timeframe
+
+          // Basic validation before hitting services
+          if (!symbol || !timeframe) {
+            await sendMessage(chatId, '⚠️ Invalid trade format. Example: EUR/USD 1h');
+            return;
+          }
+
+          try {
+            const data = await getMarketData(symbol, timeframe);
+            /* ---------------- AI SIGNAL ---------------- */
+
+            const rawSignal = await generateSignal(data, symbol, timeframe);
+            const cleanSignal = extractSignal(rawSignal, symbol, timeframe);
+
+            if (!cleanSignal || !validateSignal(cleanSignal)) {
+              await sendMessage(
+                chatId,
+                '⚠️ Signal generation failed. Please try another pair or timeframe.',
+              );
+              return;
+            }
+
+            await sendMessage(chatId, cleanSignal, { parse_mode: 'Markdown' });
+          } catch (err: any) {
+            console.log('err', err);
+            // ✅ corrected error message
+            await sendMessage(
+              chatId,
+              `❌ Unable to analyse trade please try again. ${err.message}`,
+            );
+          }
+
+          break;
         case 'analyze-photo':
-          const chatId = job.data.chatId;
-          const filePath = job.data.filePath;
-          const fileUrl = `https://api.telegram.org/file/bot${ENV.TELEGRAM_TOKEN}/${filePath}`;
+          const fileUrl = job.data.fileUrl;
           const imagePath = path.join('../../', `chart_${chatId}.jpg`);
 
           const response = await axios({ url: fileUrl, responseType: 'stream' });
@@ -33,8 +70,6 @@ new Worker(
             try {
               const ocrText = await runImageOCR(imagePath);
 
-              console.log('OCR RESULT:', ocrText);
-
               const tradeInput = extractTradeInput(ocrText);
 
               if (!tradeInput) {
@@ -44,23 +79,20 @@ new Worker(
               }
 
               const data = await getMarketData(tradeInput.symbol, tradeInput.timeframe);
-              console.log('data', data);
               /* ---------------- AI SIGNAL ---------------- */
               const rawSignal = await generateSignal(data, tradeInput.symbol, tradeInput.timeframe);
 
-              const cleanSignal = extractSignal(rawSignal);
+              const cleanSignal = extractSignal(rawSignal, tradeInput.symbol, tradeInput.timeframe);
 
               if (!cleanSignal || !validateSignal(cleanSignal)) {
                 await sendMessage(chatId, '⚠️ Signal generation failed. Try another screenshot.');
                 cleanup(imagePath);
                 return;
               }
-              console.log('cleanSignal', cleanSignal);
               await sendMessage(chatId, cleanSignal, { parse_mode: 'Markdown' });
 
               cleanup(imagePath);
             } catch (err) {
-              console.log('err', err);
               await sendMessage(chatId, '❌ OCR analysis failed.');
               cleanup(imagePath);
             }
@@ -97,7 +129,6 @@ new Worker(
           console.warn('Unknown job type:', job.name);
       }
     } catch (error) {
-      console.log('error queue', error);
       await sendMessage(
         job.data.chatId,
         `⚠️ Our summarization service is temporarily unavailable.  

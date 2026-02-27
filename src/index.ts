@@ -1,5 +1,5 @@
-import { initBot } from '@bot/handlers';
-import { ENV } from '@configs/env';
+import { initBot } from '@/bot/handlers';
+import { ENV } from '@/configs/env';
 
 initBot(ENV.TELEGRAM_TOKEN);
 

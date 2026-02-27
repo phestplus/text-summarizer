@@ -7,8 +7,8 @@
   "scripts": {
     "redis": "Memurai",
     "server": "concurrently -n \"REDIS,SERVER\" -c \"blue,magenta\" \"npm run redis\" \"npm run dev\"",
-    "build": "tsc",
-    "start": "node dist/scr/index.js",
+    "build": "node scripts/build.js",
+    "start": "node dist/index.js",
     "dev": "nodemon"
   },
   "keywords": [],
