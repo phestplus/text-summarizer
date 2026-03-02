@@ -11,7 +11,7 @@ export async function getMarketData(symbol: string, interval: string): Promise<T
     return data;
   }
   const res = await axios.get(
-    `https://api.twelvedata.com/time_series?symbol=${symbol}&interval=${interval}&outputsize=50&apikey=${ENV.TWELVE_DATA_API_KEY}`,
+    `https://api.twelvedata.com/time_series?symbol=${symbol}&interval=${interval}&outputsize=30&apikey=${ENV.TWELVE_DATA_API_KEY}`,
   );
   connection.setex(
     cacheKey,
