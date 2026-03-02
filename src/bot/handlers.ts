@@ -184,6 +184,7 @@ Send a trading chart screenshot with visible indicators.
             "USD/CAD",
             "NZD/USD",
             "USD/CHF",
+            "USD/THB",
             // Crypto
             "BTC/USDT",
             "ETH/USDT",
