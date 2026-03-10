@@ -1,20 +1,35 @@
-import fs from 'fs';
-const STORAGE_FILE = './storage.json';
+// storage.ts
+import { connection } from "@/queue/redis";
 
-export interface Storage {
-  subscribers: number[];
+const REDIS_SUBSCRIBERS_KEY = 'subscribers';
+
+/**
+ * Add a subscriber (chatId) to Redis.
+ * Ensures no duplicates.
+ */
+export async function addSubscriber(chatId: number) {
+  // Using Redis set to avoid duplicates automatically
+  await connection.sadd(REDIS_SUBSCRIBERS_KEY, chatId.toString());
 }
 
-export const storage: Storage = loadStorage();
-
-export function loadStorage(): Storage {
-  try {
-    return JSON.parse(fs.readFileSync(STORAGE_FILE, 'utf8'));
-  } catch {
-    return { subscribers: [] };
-  }
+/**
+ * Get all subscribers (chatIds) from Redis.
+ */
+export async function getSubscribers(): Promise<number[]> {
+  const ids = await connection.smembers(REDIS_SUBSCRIBERS_KEY);
+  return ids.map(id => parseInt(id, 10));
 }
 
-export function saveStorage(obj: Storage) {
-  fs.writeFileSync(STORAGE_FILE, JSON.stringify(obj, null, 2));
+/**
+ * Remove a subscriber (optional)
+ */
+export async function removeSubscriber(chatId: number) {
+  await connection.srem(REDIS_SUBSCRIBERS_KEY, chatId.toString());
+}
+
+/**
+ * Clear all subscribers (admin)
+ */
+export async function clearSubscribers() {
+  await connection.del(REDIS_SUBSCRIBERS_KEY);
 }

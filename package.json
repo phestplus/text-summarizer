@@ -30,7 +30,6 @@
     "p-limit": "^7.2.0",
     "pdf-parse": "^2.4.5",
     "redis": "^5.10.0",
-    "sharp": "^0.34.5",
     "tesseract.js": "^7.0.0",
     "tsconfig-paths": "^4.2.0",
     "uuid": "^13.0.0",

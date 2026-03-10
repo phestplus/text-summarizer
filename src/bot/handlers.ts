@@ -1,16 +1,14 @@
+// botInit.ts
 import { ENV } from "@/configs/env";
 import { tradeQueue } from "@/queue/jobs";
-import { connection } from "@/queue/redis";
 import TelegramBot from "node-telegram-bot-api";
-import {getBot} from "@configs/bot";
-import { saveStorage, storage } from "./storage";
-
-/* ========================= INIT ========================= */
-
+import { getBot } from "@/configs/bot";
+import { addSubscriber, getSubscribers } from "./storage";
+import { connection } from "@/queue/redis";
+import { formatSignalMarkdown } from "@/integration/ocr";
+/* ========================= INIT BOT ========================= */
 export function initBot(bot: TelegramBot) {
-    /* ========================= SET COMMANDS ========================= */
-
-    // Define your commands
+    /* ========================= COMMANDS ========================= */
     const commands = [
         {
             command: "start",
@@ -20,110 +18,142 @@ export function initBot(bot: TelegramBot) {
         { command: "help", description: "Show instructions" }
     ];
 
-    // Register commands with Telegram
-    bot.setMyCommands(commands).then(() =>
-        console.log("✅ Commands registered with Telegram")
-    );
-
-    bot.setMyCommands(
-        [
-            {
-                command: "broadcast",
-                description: "Admin only: broadcast message"
-            },
-            {
-                command: "start",
-                description: "Start the bot and register yourself"
-            },
-            { command: "signal", description: "Generate a trade signal" },
-            { command: "clear", description: "Clear bot cache" },
-            { command: "help", description: "Show instructions" }
-        ],
+    const adminCommands = [
         {
-            scope: { type: "chat", chat_id: ENV.ADMIN_CHAT_ID }
-        }
-    );
-    /* ========================= START ========================= */
+            command: "start",
+            description: "Start the bot and register yourself"
+        },
+        { command: "signal", description: "Generate a trade signal" },
+        {
+            command: "broadcast",
+            description: "Broadcast last signal (admin only)"
+        },
+        { command: "help", description: "Show instructions" },
+        { command: "clear", description: "Clear Redis cache (admin only)" }
+    ];
 
+    // General commands
+    bot.setMyCommands(commands);
+    // Admin commands
+    bot.setMyCommands(adminCommands, {
+        scope: { type: "chat", chat_id: ENV.ADMIN_CHAT_ID }
+    });
+
+    /* ========================= START ========================= */
     bot.onText(/^\/start(?:@\w+)?$/, async msg => {
         const chatId = msg.chat.id;
-
-        registerSubscriber(chatId);
+        await registerSubscriber(chatId);
 
         await bot.sendMessage(
             chatId,
-            `👋 *Welcome to TradeSignal Bot*
-
-Send a trading chart screenshot with visible indicators.
-
-📸 *How it works*
-• Send screenshot  
-• OCR extracts indicator values  
-• Signal generated automatically  
-
-⚠️ Signals are algorithmic insights, not financial advice.`,
+            `👋 *Welcome to TradeSignal Bot*\n\n📩 Send a trading pair and timeframe like \`EUR/USD 1h\` or \`BTC/USDT 5m\`.\n⏱ Timeframes: 1m,5m,15m,30m,1h,2h,4h,1d,1w\n\n⚠️ Signals are algorithmic insights, not financial advice.`,
             { parse_mode: "Markdown" }
         );
     });
 
-    /* ========================= BROADCAST ========================= */
-
-    bot.onText(/^\/broadcast(?:@\w+)? (.+)/, async (msg, match) => {
+    /* ========================= HELP ========================= */
+    bot.onText(/^\/help(?:@\w+)?$/, async msg => {
         const chatId = msg.chat.id;
-
-        if (chatId !== ENV.ADMIN_CHAT_ID) {
-            await bot.sendMessage(chatId, "Unauthorized: admin only.");
-            return;
-        }
-
-        const message = match?.[1]?.trim();
-
-        if (!message) {
-            await bot.sendMessage(chatId, "Usage: /broadcast <message>");
-            return;
-        }
-
-        await tradeQueue.add("broadcast", {
-            chatIds: storage.subscribers,
-            text: message
-        });
-
         await bot.sendMessage(
             chatId,
-            `✅ Broadcast queued to ${storage.subscribers.length} users.`
+            `📌 *TradeSignal Bot Help*\n
+/start - Register and see instructions
+/signal - Generate a trade signal (select pair/timeframe)
+/help - Show this help
+/admin only:
+/clear - Clear Redis cache
+/broadcast - Broadcast last signal`,
+            { parse_mode: "Markdown" }
         );
     });
 
-    /* ========================= CLEAR ========================= */
-    bot.onText(/\/clear/, async msg => {
+    /* ========================= SIGNAL COMMAND ========================= */
+    bot.onText(/^\/signal(?:@\w+)?(?:\s+(.+))?$/, async (msg, match) => {
         const chatId = msg.chat.id;
+        const input = match?.[1]?.trim();
 
-        // Restrict to admin only
-        if (chatId !== ENV.ADMIN_CHAT_ID) {
-            await bot.sendMessage(chatId, "❌ Unauthorized: admin only.");
+        if (!input) {
+            // Show inline pairs
+            const tradingPairs = [
+                // Major pairs
+                "EUR/USD",
+                "GBP/USD",
+                "USD/JPY",
+                "USD/CHF",
+                "USD/CAD",
+                "AUD/USD",
+                "NZD/USD",
+
+                // Minor pairs / crosses supported by Twelve Data
+                "EUR/GBP",
+                "EUR/JPY",
+                "EUR/CHF",
+                "GBP/JPY",
+                "GBP/CHF",
+                "AUD/JPY",
+                "AUD/NZD",
+                "NZD/JPY",
+                "CAD/JPY",
+                "CHF/JPY"
+            ];
+            const keyboard: any[][] = [];
+            for (let i = 0; i < tradingPairs.length; i += 2) {
+                const row = tradingPairs.slice(i, i + 2).map(pair => ({
+                    text: pair,
+                    callback_data: `pair_${pair.replace("/", "")}`
+                }));
+                keyboard.push(row);
+            }
+            await bot.sendMessage(chatId, "📊 Select trading pair:", {
+                reply_markup: { inline_keyboard: keyboard }
+            });
             return;
         }
 
-        try {
-            // Option 1: Clear Redis keys used by your bot storage
-            const keys = await connection.keys("*"); // be careful in prod
-            if (keys.length > 0) {
-                await connection.del(keys);
-            }
-
-            // Option 2: Clear specific queues
-            // await tradeQueue.obliterate({ force: true }); // clears all jobs
-
+        // User typed input → validate
+        const parts = input.split(/\s+/);
+        if (parts.length !== 2) {
             await bot.sendMessage(
                 chatId,
-                "✅ Redis cache and trade queue cleared."
+                "⚠️ Invalid format. Example: `/signal EUR/USD 1h`",
+                { parse_mode: "Markdown" }
             );
-        } catch (err) {
-            console.error("Error clearing Redis:", err);
-            await bot.sendMessage(chatId, "❌ Failed to clear Redis cache.");
+            return;
         }
+
+        const symbol = parts[0].toUpperCase();
+        const timeframe = parts[1].toLowerCase();
+        const validTimeframes = [
+            "1m",
+            "5m",
+            "15m",
+            "30m",
+            "1h",
+            "2h",
+            "4h",
+            "1d",
+            "1w"
+        ];
+        if (!validTimeframes.includes(timeframe)) {
+            await bot.sendMessage(
+                chatId,
+                `⚠️ Invalid timeframe. Choose from: ${validTimeframes.join(
+                    ", "
+                )}`,
+                { parse_mode: "Markdown" }
+            );
+            return;
+        }
+
+        // Add to queue
+        await tradeQueue.add("trade", {
+            chatId,
+            text: `${symbol} ${timeframe}`
+        });
+        await bot.sendMessage(chatId, `✅ Analysing ${symbol} ${timeframe}...`);
     });
-    /* ========================= SIGNAL ========================= */
+
+    /* ========================= CALLBACK QUERIES ========================= */
     bot.on("callback_query", async query => {
         const chatId = query.message!.chat.id;
         const data = query.data!;
@@ -138,13 +168,9 @@ Send a trading chart screenshot with visible indicators.
                 "1h",
                 "2h",
                 "4h",
-                "6h",
-                "12h",
                 "1d",
                 "1w"
             ];
-
-            // Convert to Telegram inline keyboard rows (max 2–3 per row)
             const keyboard: any[][] = [];
             for (let i = 0; i < timeframes.length; i += 3) {
                 const row = timeframes.slice(i, i + 3).map(tf => ({
@@ -154,142 +180,91 @@ Send a trading chart screenshot with visible indicators.
                 keyboard.push(row);
             }
             await bot.sendMessage(chatId, `⏱ Select timeframe for ${pair}`, {
-                reply_markup: {
-                    inline_keyboard: keyboard
-                }
+                reply_markup: { inline_keyboard: keyboard }
             });
         }
+
         if (data.startsWith("tf_")) {
             const [, pair, timeframe] = data.split("_");
-
             await tradeQueue.add("trade", {
                 chatId,
                 text: `${pair} ${timeframe}`
             });
 
-            await bot.sendMessage(chatId, `✅ Analysing ${pair} ${timeframe}`);
+            await bot.sendMessage(
+                chatId,
+                `✅ Analysing ${pair} ${timeframe}...`
+            );
         }
 
         await bot.answerCallbackQuery(query.id);
     });
 
-    bot.onText(/^\/signal(?:@\w+)?$/, async msg => {
+    /* ========================= ADMIN COMMANDS ========================= */
+    bot.onText(/\/clear/, async msg => {
         const chatId = msg.chat.id;
-        const tradingPairs = [
-            // Forex
-            "EUR/USD",
-            "GBP/USD",
-            "USD/JPY",
-            "AUD/USD",
-            "USD/CAD",
-            "NZD/USD",
-            "USD/CHF",
-            "USD/THB",
-            // Crypto
-            "BTC/USDT",
-            "ETH/USDT",
-            "BNB/USDT",
-            "SOL/USDT",
-            "ADA/USDT",
-            // Commodities
-            "XAU/USD",
-            "XAG/USD",
-            "OIL/USD",
-            // Indices
-            "SPX500",
-            "DJI30",
-            "NASDAQ100"
-        ];
-        const pairKeyboard: any[][] = [];
-        const buttonsPerRow = 2; // change to 3 if you want more compact rows
-
-        for (let i = 0; i < tradingPairs.length; i += buttonsPerRow) {
-            const row = tradingPairs.slice(i, i + buttonsPerRow).map(pair => ({
-                text: pair,
-                callback_data: `pair_${pair.replace("/", "")}` // remove slash for callback
-            }));
-            pairKeyboard.push(row);
-        }
-        await bot.sendMessage(chatId, "📊 Select trading pair", {
-            reply_markup: {
-                inline_keyboard: pairKeyboard
-            }
-        });
-    });
-
-    /* ========================= TRADE ========================= */
-
-    bot.onText(/^\/signal(?:@\w+)? (.+)/, async (msg, match) => {
-        const chatId = msg.chat.id;
-
-        const message = match?.[1]?.trim();
-
-        if (!message) {
-            await bot.sendMessage(chatId, "Usage: /trade EUR/USD 1H");
+        if (chatId !== ENV.ADMIN_CHAT_ID)
+            return await bot.sendMessage(
+                chatId,
+                "❌ Unauthorized: admin only."
+            );
+        try {
+            const keys = await connection.keys("*");
+            if (keys.length) await connection.del(keys);
+            await bot.sendMessage(chatId, "✅ Redis cache cleared.");
+            return;
+        } catch (err) {
+            console.error(err);
+            await bot.sendMessage(chatId, "❌ Failed to clear Redis cache.");
             return;
         }
-
-        await tradeQueue.add("trade", {
-            chatId,
-            text: message
-        });
-
-        await bot.sendMessage(chatId, `✅ Trade is being analysed`);
     });
 
-    /* ========================= PHOTO ========================= */
-
-    bot.on("photo", async msg => {
+    bot.onText(/\/broadcast/, async msg => {
         const chatId = msg.chat.id;
-
-        try {
-            registerSubscriber(chatId);
-
-            const fileId = msg.photo![msg.photo!.length - 1].file_id;
-            const file = await bot.getFile(fileId);
-
-            // Construct full URL so worker doesn't depend on bot context
-            const fileUrl = `https://api.telegram.org/file/bot${ENV.TELEGRAM_TOKEN}/${file.file_path}`;
-
-            await tradeQueue.add("analyze-photo", {
+        if (chatId !== ENV.ADMIN_CHAT_ID)
+            return await bot.sendMessage(
                 chatId,
-                fileUrl
-            });
+                "❌ Unauthorized: admin only."
+            );
 
-            await sendMessage(chatId, "📊 Screenshot received. Analysing...");
-        } catch (err) {
-            console.error("Photo processing error:", err);
-            await bot.sendMessage(chatId, "❌ Error processing screenshot.");
+        const rawSignal = await connection.get("lastSignal");
+
+        if (!rawSignal)
+            return await bot.sendMessage(
+                chatId,
+                "⚠️ No signal to broadcast yet."
+            );
+        const lastSignal = JSON.parse(rawSignal);
+        const chatIds = await getSubscribers();
+        for (const userId of chatIds) {
+            const md = formatSignalMarkdown(lastSignal);
+            await sendMessage(userId, md, { parse_mode: "Markdown" });
         }
+        await bot.sendMessage(
+            chatId,
+            `✅ Broadcast sent to ${chatIds.length} users.`
+        );
+        return;
     });
 
     /* ========================= FALLBACK ========================= */
-
     bot.on("message", async msg => {
         const chatId = msg.chat.id;
-
-        // Ignore commands
         if (msg.text?.startsWith("/")) return;
 
-        // Ignore photos (handled above)
-        if (msg.photo) return;
-
-        registerSubscriber(chatId);
-
+        await registerSubscriber(chatId);
         await bot.sendMessage(
             chatId,
-            "📩 Send a trading chart screenshot for analysis."
+            "📩 Send a trading pair and timeframe to generate a signal. Example: `EUR/USD 1h`",
+            { parse_mode: "Markdown" }
         );
     });
 }
 
 /* ========================= HELPERS ========================= */
-
-function registerSubscriber(chatId: number) {
-    if (!storage.subscribers.includes(chatId)) {
-        storage.subscribers = [...new Set([...storage.subscribers, chatId])];
-        saveStorage(storage);
-    }
+async function registerSubscriber(chatId: number) {
+    await addSubscriber(chatId);
 }
 
 export async function sendMessage(
@@ -297,7 +272,7 @@ export async function sendMessage(
     text: string,
     options?: TelegramBot.SendMessageOptions
 ) {
-  const bot = getBot();
+    const bot = getBot();
     if (!bot) throw new Error("Bot not initialized");
 
     try {

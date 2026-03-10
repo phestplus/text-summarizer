@@ -1,142 +1,62 @@
-import adminServices from '@/admin/services';
-import { sendMessage } from '@/bot/handlers';
-import { extractSignal, generateSignal, validateSignal } from '@/configs/ai';
-import { getMarketData } from '@/configs/twelveData';
-import { cleanup, extractTradeInput, normalizeSymbol, runImageOCR } from '@/integration/ocr';
-import userServices from '@/user/services';
-import axios from 'axios';
-import fs from 'fs';
-import path from 'path';
-import { Job, Queue, Worker, connection } from './redis';
+// tradeWorker.ts
+import { Job, Queue, Worker, connection } from "./redis";
+import { generateSignal } from "@/bot/engine";
+import { sendMessage } from "@/bot/handlers";
+import { normalizeSymbol,formatSignalMarkdown } from "@/integration/ocr";
+import { ENV } from "@/configs/env";
+
 // Create the queue
-const tradeQueue = new Queue('analyze', { connection });
+const tradeQueue = new Queue("analyze", { connection });
 
-// Create a worker to process jobs
+// Worker to process text-based trades
 new Worker(
-  'analyze',
-  async (job: Job) => {
-    try {
-      const chatId = job.data.chatId;
-      switch (job.name) {
-        case 'trade':
-          const message: string = job.data.text;
-          const parts = message.trim().split(/\s+/);
+    "analyze",
+    async (job: Job) => {
+        const chatId = job.data.chatId;
 
-          const symbol = normalizeSymbol(parts[0]);
-          const timeframe = parts[1]?.toLowerCase(); // ✅ normalize timeframe
-
-          // Basic validation before hitting services
-          if (!symbol || !timeframe) {
-            await sendMessage(chatId, '⚠️ Invalid trade format. Example: EUR/USD 1h');
+        if (job.name !== "trade") {
+            console.warn("Unknown job type:", job.name);
             return;
-          }
+        }
 
-          try {
-            const data = await getMarketData(symbol, timeframe);
-            /* ---------------- AI SIGNAL ---------------- */
+        const message: string = job.data.text;
+        const parts = message.trim().split(/\s+/);
+        const symbol = normalizeSymbol(parts[0]);
+        const timeframe = parts[1]?.toLowerCase();
 
-            const rawSignal = await generateSignal(data, symbol, timeframe);
-            const cleanSignal = extractSignal(rawSignal, symbol, timeframe);
-
-            if (!cleanSignal || !validateSignal(cleanSignal)) {
-              await sendMessage(
-                chatId,
-                '⚠️ Signal generation failed. Please try another pair or timeframe.',
-              );
-              return;
-            }
-
-            await sendMessage(chatId, cleanSignal, { parse_mode: 'Markdown' });
-          } catch (err: any) {
-            console.log('err', err);
-            // ✅ corrected error message
+        if (!symbol || !timeframe) {
             await sendMessage(
-              chatId,
-              `❌ Unable to analyse trade please try again. ${err.message}`,
+                chatId,
+                "⚠️ Invalid trade format. Example: EUR/USD 1h"
             );
-          }
+            return;
+        }
 
-          break;
-        case 'analyze-photo':
-          const fileUrl = job.data.fileUrl;
-          const imagePath = path.join('../../', `chart_${chatId}.jpg`);
+        try {
+            // Generate signal without API key
+            const rawSignal = await generateSignal(
+                symbol,
+                timeframe,
+                "1h" // trend confirmation timeframe
+            );
 
-          const response = await axios({ url: fileUrl, responseType: 'stream' });
-          const writer = fs.createWriteStream(imagePath);
-
-          response.data.pipe(writer);
-
-          writer.on('finish', async () => {
-            try {
-              const ocrText = await runImageOCR(imagePath);
-
-              const tradeInput = extractTradeInput(ocrText);
-
-              if (!tradeInput) {
-                await sendMessage(chatId, '⚠️ Unable to extract valid trade data from screenshot.');
-                cleanup(imagePath);
-                return;
-              }
-
-              const data = await getMarketData(tradeInput.symbol, tradeInput.timeframe);
-              /* ---------------- AI SIGNAL ---------------- */
-              const rawSignal = await generateSignal(data, tradeInput.symbol, tradeInput.timeframe);
-
-              const cleanSignal = extractSignal(rawSignal, tradeInput.symbol, tradeInput.timeframe);
-
-              if (!cleanSignal || !validateSignal(cleanSignal)) {
-                await sendMessage(chatId, '⚠️ Signal generation failed. Try another screenshot.');
-                cleanup(imagePath);
-                return;
-              }
-              await sendMessage(chatId, cleanSignal, { parse_mode: 'Markdown' });
-
-              cleanup(imagePath);
-            } catch (err) {
-              await sendMessage(chatId, '❌ OCR analysis failed.');
-              cleanup(imagePath);
+            console.log("Generated Signal:", rawSignal);
+            // Save last signal in Redis (admin only)
+            if (ENV.ADMIN_CHAT_ID === chatId) {
+                await connection.set("lastSignal", JSON.stringify(rawSignal));
             }
-          });
-          break;
-
-        case 'admin-service':
-          const adminResult = await adminServices.runAdminService(job.data.sevice);
-          if (adminResult) {
-            await sendMessage(job.data.chatId, adminResult);
-          }
-
-          break;
-
-        case 'user-service':
-          const userResult = await userServices.runUserService(job.data.sevice);
-          if (userResult) {
-            await sendMessage(job.data.chatId, userResult);
-          }
-
-          break;
-        case 'admin-broadcast':
-          const { chatIds, service } = job.data;
-          const adminBroadcastResult = await adminServices.runAdminService(service);
-          if (adminBroadcastResult) {
-            for (const chatId of chatIds) {
-              await sendMessage(chatId, adminBroadcastResult);
-            }
-          }
-
-          break;
-
-        default:
-          console.warn('Unknown job type:', job.name);
-      }
-    } catch (error) {
-      await sendMessage(
-        job.data.chatId,
-        `⚠️ Our summarization service is temporarily unavailable.  
-Please try again in a few minutes. Thank you for your patience.`,
-      );
-    }
-  },
-  { connection },
+            // Send raw signal to the user
+            const md = formatSignalMarkdown(rawSignal);
+            await sendMessage(chatId, md, { parse_mode: "Markdown" });
+        } catch (err: any) {
+            console.error("Trade generation error:", err);
+            await sendMessage(
+                chatId,
+                `❌ Unable to analyze trade. ${err.message}`
+            );
+        }
+    },
+    { connection }
 );
 
 export { tradeQueue };
