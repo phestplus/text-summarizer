@@ -1,19 +1,9 @@
-import fs from "fs";
+import fs from "fs";export function normalizeSymbol(symbol: string) {
+    symbol = symbol.replace(/\//g, ""); // remove any existing slashes
 
-export function normalizeSymbol(symbol: string) {
     const knownQuotes = [
-        "USDT",
-        "USDC",
-        "USD",
-        "BTC",
-        "ETH",
-        "EUR",
-        "JPY",
-        "GBP",
-        "AUD",
-        "CAD",
-        "CHF",
-        "NZD"
+        "USDT", "USDC", "USD", "BTC", "ETH", 
+        "EUR", "JPY", "GBP", "AUD", "CAD", "CHF", "NZD"
     ];
 
     for (const quote of knownQuotes) {
@@ -23,8 +13,9 @@ export function normalizeSymbol(symbol: string) {
         }
     }
 
-    return symbol; // fallback (do nothing)
+    return symbol; // fallback
 }
+
 
 export function formatSignalMarkdown(signal: Record<string, any>) {
     const formatted: string[] = [];
@@ -34,21 +25,23 @@ export function formatSignalMarkdown(signal: Record<string, any>) {
 
     // Key icons (stay the same)
     const keyIcons: Record<string, string> = {
-        pair: "💱",
-        signal: "📡",
-        confidence: "📈",
-        entry: "🎯",
-        stop_loss: "🛑",
-        take_profit: "💰",
-        risk_reward: "⚖️",
-        trend_timeframe: "⏱️",
-        entry_timeframe: "⏱️",
-        trend: "📊",
-        momentum: "💨",
-        volatility: "🌪️",
-        volume: "🔊",
-        timestamp: "⏰"
-    };
+    pair: "💱",
+    signal: "📡",
+    confidence: "📈",
+    entry: "🎯",
+    stop_loss: "🛑",
+    take_profit: "💰",
+    risk_reward: "⚖️",
+    trend_timeframe: "⏱️",
+    entry_timeframe: "⏱️",
+    trend: "📊",
+    momentum: "💨",
+    volatility: "🌪️",
+    lot_size: "📦",
+    risk_amount: "💸",
+    spread: "↔️",
+    timestamp: "⏰"
+};
 
     for (const [key, value] of Object.entries(signal)) {
         const displayKey = key
