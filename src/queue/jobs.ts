@@ -2,7 +2,7 @@
 import { Job, Queue, Worker, connection } from "./redis";
 import { generateSignal } from "@/bot/engine";
 import { sendMessage } from "@/bot/handlers";
-import { normalizeSymbol,formatSignalMarkdown } from "@/integration/ocr";
+import { normalizeSymbol, formatSignalMarkdown } from "@/integration/ocr";
 import { ENV } from "@/configs/env";
 
 // Create the queue
@@ -20,8 +20,10 @@ new Worker(
         }
 
         const message: string = job.data.text;
+        const capital: string = job.data.capital;
         const parts = message.trim().split(/\s+/);
         const symbol = normalizeSymbol(parts[0]);
+        console.log(symbol)
         const timeframe = parts[1]?.toLowerCase();
 
         if (!symbol || !timeframe) {
@@ -37,8 +39,7 @@ new Worker(
             const rawSignal = await generateSignal(
                 symbol,
                 timeframe,
-                "1h" // trend confirmation timeframe
-            );
+                capital);
 
             console.log("Generated Signal:", rawSignal);
             // Save last signal in Redis (admin only)
