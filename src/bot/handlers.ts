@@ -18,14 +18,20 @@ const sessions: Record<number, Session> = {};
 // ========================= INIT BOT =========================
 export function initBot(bot: TelegramBot) {
     const commands = [
-        { command: "start", description: "Start the bot and register yourself" },
+        {
+            command: "start",
+            description: "Start the bot and register yourself"
+        },
         { command: "signal", description: "Generate a trade signal" },
         { command: "help", description: "Show instructions" }
     ];
 
     const adminCommands = [
         ...commands,
-        { command: "broadcast", description: "Broadcast last signal (admin only)" },
+        {
+            command: "broadcast",
+            description: "Broadcast last signal (admin only)"
+        },
         { command: "clear", description: "Clear Redis cache (admin only)" }
     ];
 
@@ -59,7 +65,10 @@ export function initBot(bot: TelegramBot) {
     bot.onText(/^\/signal(?:@\w+)?$/, async msg => {
         const chatId = msg.chat.id;
         sessions[chatId] = { step: "capital" };
-        await bot.sendMessage(chatId, "💰 Enter your capital (or press Enter to skip):");
+        await bot.sendMessage(
+            chatId,
+            "💰 Enter your capital (or press Enter to skip):"
+        );
     });
 
     // ========================= MESSAGE HANDLER =========================
@@ -74,7 +83,10 @@ export function initBot(bot: TelegramBot) {
         if (text) {
             const cap = Number(text);
             if (isNaN(cap) || cap <= 0) {
-                await bot.sendMessage(chatId, "⚠️ Capital must be a positive number. Try again:");
+                await bot.sendMessage(
+                    chatId,
+                    "⚠️ Capital must be a positive number. Try again:"
+                );
                 return;
             }
             session.capital = cap;
@@ -86,10 +98,23 @@ export function initBot(bot: TelegramBot) {
 
         // ========================= PAIR INLINE =========================
         const tradingPairs = [
-            "EUR/USD","GBP/USD","USD/JPY","USD/CHF","USD/CAD",
-            "AUD/USD","NZD/USD","EUR/GBP","EUR/JPY","EUR/CHF",
-            "GBP/JPY","GBP/CHF","AUD/JPY","AUD/NZD","NZD/JPY",
-            "CAD/JPY","CHF/JPY"
+            "EUR/USD",
+            "GBP/USD",
+            "USD/JPY",
+            "USD/CHF",
+            "USD/CAD",
+            "AUD/USD",
+            "NZD/USD",
+            "EUR/GBP",
+            "EUR/JPY",
+            "EUR/CHF",
+            "GBP/JPY",
+            "GBP/CHF",
+            "AUD/JPY",
+            "AUD/NZD",
+            "NZD/JPY",
+            "CAD/JPY",
+            "CHF/JPY"
         ];
 
         const keyboard: any[][] = [];
@@ -97,7 +122,9 @@ export function initBot(bot: TelegramBot) {
             keyboard.push(
                 tradingPairs.slice(i, i + 2).map(pair => ({
                     text: pair,
-                    callback_data: `pair_${pair.replace("/", "")}_${session.capital ?? 0}`
+                    callback_data: `pair_${pair.replace("/", "")}_${
+                        session.capital ?? 0
+                    }`
                 }))
             );
         }
@@ -123,7 +150,17 @@ export function initBot(bot: TelegramBot) {
             session.capital = Number(capStr) || null;
             session.step = "timeframe";
 
-            const timeframes = ["1m","5m","15m","30m","1h","2h","4h","1d","1w"];
+            const timeframes = [
+                "1m",
+                "5m",
+                "15m",
+                "30m",
+                "1h",
+                "2h",
+                "4h",
+                "1d",
+                "1w"
+            ];
             const keyboard: any[][] = [];
             for (let i = 0; i < timeframes.length; i += 3) {
                 keyboard.push(
@@ -153,7 +190,9 @@ export function initBot(bot: TelegramBot) {
 
             await bot.sendMessage(
                 chatId,
-                `✅ Analysing ${session.pair} ${tf}${session.capital ? ` with $${session.capital}` : ""}...`
+                `✅ Analysing ${session.pair} ${tf}${
+                    session.capital ? ` with $${session.capital}` : ""
+                }...`
             );
 
             delete sessions[chatId];
@@ -165,7 +204,10 @@ export function initBot(bot: TelegramBot) {
     // ========================= ADMIN COMMANDS =========================
     bot.onText(/\/clear/, async msg => {
         const chatId = msg.chat.id;
-        if (chatId !== ENV.ADMIN_CHAT_ID) return bot.sendMessage(chatId, "❌ Unauthorized");
+        if (chatId !== ENV.ADMIN_CHAT_ID) {
+            bot.sendMessage(chatId, "❌ Unauthorized");
+            return;
+        }
 
         const keys = await connection.keys("*");
         if (keys.length) await connection.del(keys);
@@ -174,10 +216,15 @@ export function initBot(bot: TelegramBot) {
 
     bot.onText(/\/broadcast/, async msg => {
         const chatId = msg.chat.id;
-        if (chatId !== ENV.ADMIN_CHAT_ID) return bot.sendMessage(chatId, "❌ Unauthorized");
-
+        if (chatId !== ENV.ADMIN_CHAT_ID) {
+            bot.sendMessage(chatId, "❌ Unauthorized");
+            return;
+        }
         const rawSignal = await connection.get("lastSignal");
-        if (!rawSignal) return bot.sendMessage(chatId, "⚠️ No signal");
+        if (!rawSignal) {
+            bot.sendMessage(chatId, "⚠️ No signal");
+            return;
+        }
 
         const lastSignal = JSON.parse(rawSignal);
         const chatIds = await getSubscribers();
@@ -187,7 +234,10 @@ export function initBot(bot: TelegramBot) {
             await sendMessage(userId, md, { parse_mode: "Markdown" });
         }
 
-        await bot.sendMessage(chatId, `✅ Broadcast sent to ${chatIds.length} users`);
+        await bot.sendMessage(
+            chatId,
+            `✅ Broadcast sent to ${chatIds.length} users`
+        );
     });
 }
 
