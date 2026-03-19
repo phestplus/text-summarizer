@@ -39,7 +39,7 @@ new Worker(
             const rawSignal = await generateSignal(
                 symbol,
                 timeframe,
-                capital);
+                Number(capital||10));
 
             console.log("Generated Signal:", rawSignal);
             // Save last signal in Redis (admin only)
